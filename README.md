@@ -1,5 +1,8 @@
 # llmpk
 
+[![CI](https://github.com/D1376/llmpk/actions/workflows/ci.yml/badge.svg)](https://github.com/D1376/llmpk/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/D1376/llmpk)](https://github.com/D1376/llmpk/releases/latest)
+
 A terminal TUI for browsing LLM and coding-agent leaderboards from one keyboard-driven interface.
 
 > **Note:** This is a personal vibe coding project using [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Built for my own use to quickly compare LLM models and coding agents without opening a browser. Expect rough edges.
@@ -10,29 +13,32 @@ No API keys. No headless browser. No JavaScript runtime. Just HTTP and regex.
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ Boards                                                                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ llmpk - AA                                                                  │
+│ 1 AA   2 AAg   3 DSwe                                                       │
 │ artificialanalysis.ai  |  102 models  |  view: table  |  sort: Intelligence │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ #  Model                Intel  $/M   Provider    Ctx                        │
-│ 1  Claude Sonnet 4.5     69.2  3.00  Anthropic   200K                       │
-│ 2  GPT-5                  68.4  5.00  OpenAI      256K                       │
-│ 3  Gemini 2.5 Pro        67.0  3.50  Google       1M                        │
+│ #  Model                Intel  $/M   Provider    Cache  Ctx                 │
+│ 1  Claude Sonnet 4.5     69.2  3.00  Anthropic    90%   200K                │
+│ 2  GPT-5                 68.4  5.00  OpenAI       75%   400K                │
+│ 3  Gemini 2.5 Pro        67.0  3.50  Google        -     1M                 │
 │ ...                                                                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ ? keybindings  q quit  [ ] board  j/k row  r reload  y copy                 │
-│ i/s/p/c sort  o asc/desc  m chart view  / filter                           │
+│ ? help  q quit  [ ] board  j/k row  g/G top/bot  r reload  y copy  1/102    │
+│ i/s/p/d/c sort  o asc/desc  m chart view  / filter                          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
 
-- **3 leaderboard boards** — Artificial Analysis model rankings, Artificial Analysis coding-agent rankings, and DeepSWE coding-agent benchmark
-- **Parallel startup fetching** — both boards load in background threads on startup; `r` refetches the current board
+- **3 leaderboard boards** — Artificial Analysis model rankings, Artificial Analysis coding-agent rankings, and the DeepSWE coding-agent benchmark
+- **Background fetching** — each board loads on its own thread the first time you switch to it; `r` refetches the current board without blocking the UI
+- **AA price economics** — the headline 7:2:1 cache:input:output blend, the no-cache 3:1 blend, input / output / cache-hit / cache-write prices, and cache discount; prices carry banded color and sub-cent values render as `<$0.01/M` instead of rounding to `$0.00`
+- **Leaderboard merge** — AA's homepage payload ships no context window and no cache-write price, so llmpk overlays both from `/leaderboards/models`, keyed by slug
 - **Table and full-width horizontal chart views** — toggle with `m`
 - **Provider-aware colors** — AA provider colors and agent creator/provider accents carry into tables and charts
 - **Per-board filtering** — type `/` to filter; filters are cached and scoped to the active board
-- **Responsive layout** — adapts columns to terminal width; wide table views get selected-row detail panes
+- **Responsive layout** — columns appear as the terminal widens (provider from 62 columns, cache from 70, context from 74, speed from 84, license from 98, release date from 110); the selected row gets a side detail pane once the terminal is wide enough for that board
 - **Metric sorting** — missing values stay last; cost-like metrics default to ascending when selected
+- **Compact mode** — `z` removes column spacing for narrow terminals
 - **Mouse support** — scroll with mouse wheel, click tabs to switch boards
 - **Row position indicator** — table view footer shows selected row / visible row count
 - **OSC 52 copy** — press `y` to copy the selected model or agent label through terminal clipboard support
@@ -53,7 +59,7 @@ Prebuilt for macOS Apple Silicon (`aarch64-apple-darwin`) and Linux x86_64 (`x86
 cargo install --git https://github.com/D1376/llmpk.git
 ```
 
-Requires Rust 1.80+.
+Requires Rust 1.88+ (`rust-version` in `Cargo.toml`; CI checks the floor).
 
 ## Usage
 
@@ -83,6 +89,7 @@ Requires Rust 1.80+.
 | `t` | — | Time | Time |
 | `u` | — | Tokens | Tokens |
 | `c` | Context | — | — |
+| `d` | Cache discount | — | — |
 | `o` | Toggle sort direction | Toggle sort direction | Toggle sort direction |
 
 ### View and filter
@@ -90,6 +97,7 @@ Requires Rust 1.80+.
 | Key | Action |
 |-----|--------|
 | `m` | Toggle table / chart view |
+| `z` | Toggle compact mode (tighter column spacing) |
 | `/` | Edit filter for current board |
 | `Backspace` | Delete filter character |
 | `Enter` / `Esc` | Finish editing filter |
@@ -99,7 +107,7 @@ Requires Rust 1.80+.
 
 | Board | Source | Metrics |
 |-------|--------|---------|
-| AA | [artificialanalysis.ai](https://artificialanalysis.ai/) | Intelligence index, output speed (t/s), blended price ($/M tokens), context window |
+| AA | [artificialanalysis.ai](https://artificialanalysis.ai/) | Intelligence index, output speed (t/s), blended price ($/M tokens at 7:2:1 cache:input:output, plus the no-cache 3:1 blend), input / output / cache hit / cache write prices, cache discount (%), context window |
 | AA Agents | [artificialanalysis.ai/agents/coding-agents](https://artificialanalysis.ai/agents/coding-agents) | Coding Agent Index, Pass@1, mean cost, mean execution time, mean tokens, mean turns |
 | DeepSWE | [deepswe.datacurve.ai](https://deepswe.datacurve.ai/) | Pass@1, mean cost ($), mean duration (s), mean total tokens, mean agent steps |
 
@@ -112,12 +120,14 @@ llmpk:
 1. Fetches each page with a shared `reqwest` client (connection pooling, TLS session reuse)
 2. Extracts all RSC push chunks with a regex
 3. Decodes JS string escapes and concatenates into a single stream
-4. Parses AA model objects by scanning for balanced JSON objects containing `intelligence_index`
-5. Parses AA Agents rows by scanning for the first balanced `rows` array
-6. Fetches DeepSWE data directly from a JSON API endpoint
-7. Preserves provider metadata where available so table and chart colors stay tied to the underlying model or agent creator
+4. Parses AA model objects by scanning for balanced JSON objects containing `intelligenceIndex`
+5. Merges the duplicate per-model records AA ships (a full record and a summary record), keeping the first record's values and filling gaps from the rest
+6. Overlays context windows and cache-write prices from `/leaderboards/models`, the only AA page that still publishes them; models absent from that page keep `-`
+7. Parses AA Agents rows by scanning for the first balanced array after `rows`
+8. Fetches DeepSWE data directly from a JSON API endpoint
+9. Preserves provider metadata where available so table and chart colors stay tied to the underlying model or agent creator
 
-This is inherently fragile. If the site changes its markup, the scraper breaks. That's a feature, not a bug — it surfaces real breakage instead of hiding it behind retries.
+This is inherently fragile: if a site changes its markup, the scraper breaks. That is deliberate — breakage shows up as an error banner on the board instead of being papered over. Retries cover transient network faults only (timeout, reset, 5xx), never parsing.
 
 ## Building
 
@@ -135,10 +145,18 @@ cargo run --release
 
 ### Testing
 
-Fixture and live tests are gated behind environment variables:
+`cargo test` covers the parsers against the trimmed captures in `tests/fixtures/` — no network, no environment variables:
 
 ```sh
-# Fixture-based tests
+cargo fmt --all --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+```
+
+Tests gated behind environment variables run against a **full** captured page. Point them at one saved from the live site; the committed fixtures are trimmed to a handful of rows and intentionally do not satisfy their row-count assertions.
+
+```sh
+# Fixture-based tests (expect a complete page, not the trimmed fixture)
 LLMPK_HOMEPAGE_FIXTURE=path/to/aa.html cargo test
 LLMPK_CODING_AGENTS_FIXTURE=path/to/coding-agents.html cargo test
 LLMPK_DEEPSWE_FIXTURE=path/to/leaderboard-live.json cargo test
@@ -170,6 +188,8 @@ src/
   ui/sort.rs        Sort keys, sort direction, and missing-value ordering
   ui/state.rs       Runtime app state, selection, filters, views, and sorting
   ui/chrome.rs      Tabs, header, footer, help overlay, loading/error screens
+  ui/test_helpers.rs   Test-only row constructors
+tests/fixtures/     Trimmed AA / AA Agents / DeepSWE captures used by parser tests
 ```
 
 ## License
