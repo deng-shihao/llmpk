@@ -8,13 +8,17 @@ use ratatui::{
 
 use super::chart::{chart_capacity, render_metric_chart, ChartPreference, ChartRow};
 use super::{
-    aa_metric, accent_color_for_provider, color_from_hex, detail_line, fmt_f, fmt_price,
-    fmt_tokens, header_cell, highlight_matches, price_color, push_unique,
+    aa_metric, accent_color_for_provider, color_from_hex, detail_line, fmt_f, fmt_percent,
+    fmt_price, fmt_tokens, header_cell, highlight_matches, price_color, push_unique,
     readable_color_for_dark_bg, score_color, selected_row_style, truncate, AaKey, AppState,
 };
 use crate::aa;
 use crate::board::Board;
 use ratatui::widgets::TableState;
+
+/// USD per 1M tokens on AA's 7:2:1 cache:input:output blend.
+const PRICE_LOW: f64 = 0.5;
+const PRICE_HIGH: f64 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AaColumn {
@@ -24,6 +28,7 @@ pub(super) enum AaColumn {
     Intelligence,
     Speed,
     Price,
+    Cache,
     Context,
     Released,
     Open,
@@ -38,6 +43,7 @@ impl AaColumn {
             AaColumn::Intelligence => "Intel",
             AaColumn::Speed => "t/s",
             AaColumn::Price => "$/M",
+            AaColumn::Cache => "Cache",
             AaColumn::Context => "Ctx",
             AaColumn::Released => "Release",
             AaColumn::Open => "Open",
@@ -52,6 +58,7 @@ impl AaColumn {
             AaColumn::Intelligence => Constraint::Length(6),
             AaColumn::Speed => Constraint::Length(6),
             AaColumn::Price => Constraint::Length(7),
+            AaColumn::Cache => Constraint::Length(6),
             AaColumn::Context => Constraint::Length(7),
             AaColumn::Released => Constraint::Length(10),
             AaColumn::Open => Constraint::Length(5),
@@ -66,9 +73,10 @@ impl AaColumn {
             AaColumn::Intelligence => 3,
             AaColumn::Speed => 4,
             AaColumn::Price => 5,
-            AaColumn::Context => 6,
-            AaColumn::Released => 7,
-            AaColumn::Open => 8,
+            AaColumn::Cache => 6,
+            AaColumn::Context => 7,
+            AaColumn::Released => 8,
+            AaColumn::Open => 9,
         }
     }
 }
@@ -83,6 +91,9 @@ pub(super) fn aa_columns(width: u16, sort_key: AaKey) -> Vec<AaColumn> {
     push_unique(&mut columns, aa_column_for_key(sort_key));
     if width >= 62 {
         push_unique(&mut columns, AaColumn::Provider);
+    }
+    if width >= 70 {
+        push_unique(&mut columns, AaColumn::Cache);
     }
     if width >= 74 {
         push_unique(&mut columns, AaColumn::Context);
@@ -106,6 +117,7 @@ fn aa_column_for_key(key: AaKey) -> AaColumn {
         AaKey::Speed => AaColumn::Speed,
         AaKey::Price => AaColumn::Price,
         AaKey::Context => AaColumn::Context,
+        AaKey::Cache => AaColumn::Cache,
     }
 }
 
@@ -171,10 +183,15 @@ fn aa_cell(
         AaColumn::Speed => {
             Cell::from(fmt_f(model.speed(), 0)).style(Style::default().fg(Color::Blue))
         }
-        AaColumn::Price => Cell::from(fmt_f(model.price_1m_blended_3_to_1, 2)).style(price_color(
-            model.price_1m_blended_3_to_1,
-            2.0,
-            10.0,
+        AaColumn::Price => Cell::from(fmt_price(model.price_1m_blended, 2, "")).style(price_color(
+            model.price_1m_blended,
+            PRICE_LOW,
+            PRICE_HIGH,
+        )),
+        AaColumn::Cache => Cell::from(fmt_percent(model.cache_hit_discount)).style(score_color(
+            model.cache_hit_discount,
+            0.5,
+            1.0,
         )),
         AaColumn::Context => Cell::from(
             model
@@ -223,9 +240,39 @@ pub(super) fn render_aa_detail(frame: &mut Frame, area: Rect, model: Option<&aa:
                 Style::default().fg(Color::Blue),
             ),
             detail_line(
-                "Price",
-                fmt_price(model.price_1m_blended_3_to_1, 2, "/M"),
-                price_color(model.price_1m_blended_3_to_1, 2.0, 10.0),
+                "Blended",
+                fmt_price(model.price_1m_blended, 2, "/M"),
+                price_color(model.price_1m_blended, PRICE_LOW, PRICE_HIGH),
+            ),
+            detail_line(
+                "No cache",
+                fmt_price(model.price_1m_blended_no_cache, 2, "/M"),
+                Style::default().fg(Color::Gray),
+            ),
+            detail_line(
+                "Input",
+                fmt_price(model.price_1m_input_tokens, 2, "/M"),
+                Style::default().fg(Color::Gray),
+            ),
+            detail_line(
+                "Output",
+                fmt_price(model.price_1m_output_tokens, 2, "/M"),
+                Style::default().fg(Color::Gray),
+            ),
+            detail_line(
+                "Cache hit",
+                fmt_price(model.cache_hit_price, 2, "/M"),
+                Style::default().fg(Color::Gray),
+            ),
+            detail_line(
+                "Cache write",
+                fmt_price(model.cache_write_price, 2, "/M"),
+                Style::default().fg(Color::Gray),
+            ),
+            detail_line(
+                "Cache disc",
+                fmt_percent(model.cache_hit_discount),
+                score_color(model.cache_hit_discount, 0.5, 1.0),
             ),
             detail_line(
                 "Context",
@@ -329,7 +376,9 @@ fn provider_style(provider: &str, color: Option<Color>) -> Style {
 fn aa_chart_preference(key: AaKey) -> ChartPreference {
     match key {
         AaKey::Price => ChartPreference::Lower,
-        AaKey::Intelligence | AaKey::Speed | AaKey::Context => ChartPreference::Higher,
+        AaKey::Intelligence | AaKey::Speed | AaKey::Context | AaKey::Cache => {
+            ChartPreference::Higher
+        }
     }
 }
 
@@ -337,11 +386,12 @@ fn aa_chart_text_value(m: &aa::Model, key: AaKey) -> String {
     match key {
         AaKey::Intelligence => fmt_f(m.intelligence_index, 1),
         AaKey::Speed => format!("{} t/s", fmt_f(m.speed(), 0)),
-        AaKey::Price => format!("${}", fmt_f(m.price_1m_blended_3_to_1, 2)),
+        AaKey::Price => fmt_price(m.price_1m_blended, 2, ""),
         AaKey::Context => m
             .context_window_tokens
             .map(fmt_tokens)
             .unwrap_or_else(|| "-".into()),
+        AaKey::Cache => fmt_percent(m.cache_hit_discount),
     }
 }
 
@@ -351,5 +401,6 @@ pub(super) fn aa_key_label(k: AaKey) -> &'static str {
         AaKey::Speed => "Speed",
         AaKey::Price => "Price",
         AaKey::Context => "Context",
+        AaKey::Cache => "Cache Discount",
     }
 }

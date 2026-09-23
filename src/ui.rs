@@ -349,7 +349,7 @@ pub(crate) fn truncate(s: &str, n: usize) -> String {
 
 pub(crate) fn detail_line(label: &str, value: impl Into<String>, style: Style) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("{label:<10}"), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{label:<12}"), Style::default().fg(Color::DarkGray)),
         Span::styled(value.into(), style),
     ])
 }
@@ -377,10 +377,21 @@ pub(crate) fn fmt_f(v: Option<f64>, decimals: usize) -> String {
     }
 }
 
+/// Formats `v` at `decimals`; positive values that would render as all zeros come
+/// back as `<0.01`-style bounds, matching how artificialanalysis.ai prints prices.
 pub(crate) fn fmt_price(v: Option<f64>, decimals: usize, suffix: &str) -> String {
+    let unit = 10f64.powi(-(decimals as i32));
     match v {
+        Some(x) if x > 0.0 && x < unit / 2.0 => format!("<${unit:.decimals$}{suffix}"),
         Some(x) => format!("${x:.*}{suffix}", decimals),
         None => "-".into(),
+    }
+}
+
+pub(crate) fn fmt_percent(v: Option<f64>) -> String {
+    match v {
+        Some(x) if x.is_finite() => format!("{}%", (x * 100.0).round()),
+        Some(_) | None => "-".into(),
     }
 }
 
@@ -634,6 +645,22 @@ mod tests {
     }
 
     #[test]
+    fn price_formatting_bounds_sub_cent_values() {
+        assert_eq!(fmt_price(Some(0.0036), 2, "/M"), "<$0.01/M");
+        assert_eq!(fmt_price(Some(0.006), 2, "/M"), "$0.01/M");
+        assert_eq!(fmt_price(Some(0.0), 2, "/M"), "$0.00/M");
+        assert_eq!(fmt_price(None, 2, "/M"), "-");
+    }
+
+    #[test]
+    fn percent_formatting_rounds_and_handles_missing() {
+        assert_eq!(fmt_percent(Some(0.9)), "90%");
+        assert_eq!(fmt_percent(Some(0.9917)), "99%");
+        assert_eq!(fmt_percent(Some(0.004)), "0%");
+        assert_eq!(fmt_percent(None), "-");
+    }
+
+    #[test]
     fn responsive_aa_columns_keep_active_sort_metric_visible() {
         let cols = aa_board::aa_columns(48, AaKey::Speed);
 
@@ -642,6 +669,11 @@ mod tests {
         assert!(cols.contains(&aa_board::AaColumn::Intelligence));
         assert!(cols.contains(&aa_board::AaColumn::Price));
         assert!(!cols.contains(&aa_board::AaColumn::Released));
+
+        let cache = aa_board::aa_columns(70, AaKey::Cache);
+        assert!(cache.contains(&aa_board::AaColumn::Cache));
+        assert!(aa_board::aa_columns(70, AaKey::Intelligence).contains(&aa_board::AaColumn::Cache));
+        assert!(!aa_board::aa_columns(69, AaKey::Intelligence).contains(&aa_board::AaColumn::Cache));
     }
 
     #[test]

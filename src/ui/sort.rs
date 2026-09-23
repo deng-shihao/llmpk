@@ -31,6 +31,7 @@ pub enum AaKey {
     Speed,
     Price,
     Context,
+    Cache,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,8 +100,9 @@ pub fn aa_metric(m: &aa::Model, key: AaKey) -> Option<f64> {
     match key {
         AaKey::Intelligence => m.intelligence_index,
         AaKey::Speed => m.speed(),
-        AaKey::Price => m.price_1m_blended_3_to_1,
+        AaKey::Price => m.price_1m_blended,
         AaKey::Context => m.context_window_tokens.map(|x| x as f64),
+        AaKey::Cache => m.cache_hit_discount,
     }
 }
 

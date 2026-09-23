@@ -49,8 +49,16 @@ pub(super) fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::styled("  AA sort keys", dim),
         help_row("i", "Intelligence Index — composite quality score"),
         help_row("s", "Output Speed — tokens generated per second"),
-        help_row("p", "Blended Price — USD per 1M input+output tokens"),
+        help_row(
+            "p",
+            "Blended Price — USD per 1M tokens; detail panel shows AA's 7:2:1 \
+             cache:input:output blend and the no-cache 3:1 blend",
+        ),
         help_row("c", "Context Window — max tokens the model accepts"),
+        help_row(
+            "d",
+            "Cache Discount — share of the input price saved on cache hits",
+        ),
         Line::styled("  AA Agents sort keys", dim),
         help_row("i", "Index — Artificial Analysis Coding Agent Index"),
         help_row("a", "Pass@1 — mean benchmark reward"),
@@ -509,7 +517,7 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, app: &AppState) {
     ];
 
     let sort_keys = match app.current_board() {
-        Board::Aa => "i/s/p/c",
+        Board::Aa => "i/s/p/d/c",
         Board::AaAgents => "i/a/p/t/u/s",
         Board::DeepSwe => "a/p/t/u/s",
     };

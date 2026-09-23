@@ -182,7 +182,7 @@ fn handle_key(
                 ensure_loaded(app, tx, handles);
             }
         }
-        KeyCode::Char(c @ ('a' | 'c' | 'i' | 'p' | 's' | 't' | 'u')) => {
+        KeyCode::Char(c @ ('a' | 'c' | 'd' | 'i' | 'p' | 's' | 't' | 'u')) => {
             app.cycle_sort(c);
         }
         KeyCode::Char(_) => {}

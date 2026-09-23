@@ -288,6 +288,7 @@ impl AppState {
                     's' => Some(AaKey::Speed),
                     'p' => Some(AaKey::Price),
                     'c' => Some(AaKey::Context),
+                    'd' => Some(AaKey::Cache),
                     _ => None,
                 };
                 if let Some(k) = new_key {
@@ -650,10 +651,10 @@ mod tests {
         let mut app = AppState::new();
         let mut m1 = aa_model("claude", "Claude", "Anthropic");
         m1.intelligence_index = Some(60.0);
-        m1.price_1m_blended_3_to_1 = Some(5.0);
+        m1.price_1m_blended = Some(5.0);
         let mut m2 = aa_model("gpt", "GPT", "OpenAI");
         m2.intelligence_index = Some(50.0);
-        m2.price_1m_blended_3_to_1 = Some(1.0);
+        m2.price_1m_blended = Some(1.0);
         app.set_status(Board::Aa, Status::Loaded(Data::Aa(vec![m1, m2])));
 
         // Initially sorted by intelligence desc: [claude(60), gpt(50)]
